@@ -1,0 +1,57 @@
+void emailNotify() {
+    withAWS(role:'ProductionUSEastJenkins-JenkinsAssumableIAMRole-19KIKZI5C8PKJ', roleAccount:'623159365975') {
+            snsPublish(topicArn: 'arn:aws:sns:us-east-1:623159365975:JenkinsJobsAlerts', subject: 'Alert! Jenkins Job Health' , message: 'Jenkins master is using over 80% of its disk space.')
+    }
+node('CloudOps') {
+  stage('Checkout') {
+    checkoutRepo('cbdr', 'CloudOpsExample')
+  }
+  stage('Build') {
+    sh  '''#!/bin/bash -l
+    nvm install 6.9.4
+    npm install
+    '''
+  }
+  stage('Test') {
+    sh  '''#!/bin/bash -l
+    nvm install 6.9.4
+    npm test
+    '''
+  }
+  stage('Publish') {
+    if ('master' == env.BRANCH_NAME) {
+      publishDockerImage('cbdr', 'cloudops-example')
+    }
+  }
+}
+
+// This is outside of the node block to prevent taking up 2 executors in Jenkins. 
+// Do this when your job calls other jobs
+stage('Deploy To Staging') {
+  if ('master' == env.BRANCH_NAME) {
+    build job: 'CloudOps/CloudOpsExample/Staging/Deploy', parameters: [[$class: 'StringParameterValue', name: 'buildVersion', value: env.BUILD_DISPLAY_NAME]]
+    // The following line is legacy (V1) too
+    build job: 'CloudOps/CloudOpsExample/Staging/DeployV1', parameters: [[$class: 'StringParameterValue', name: 'buildVersion', value: env.BUILD_DISPLAY_NAME]]
+  }
+}
+  post {
+        success {
+        {
+          
+echo "Job succeeded"
+            script {emailNotifyTask: {
+                    stage('Email Notify') {
+                        emailNotify()
+                    }
+   
+        }
+        failure {
+          echo "Job Failed"
+          script{emailNotifyTask: {
+                    stage('Email Notify') {
+                        emailNotify()
+                    }}
+             }
+    }
+}
+
